@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+
+# R session artifacts
+.Rhistory
+.RData
+.Rproj.user/
+
+# Duplicate copy of netflix_analysis_ready.csv under a different name —
+# not staged, to avoid three identical copies of the same file in the repo
+# (netflix_analysis_ready.csv and netflix_research_data.csv are the two
+# that are tracked).
+netflix_analysis.csv
+
+# Large raw IMDb bulk reference data — freely re-downloadable from
+# datasets.imdbws.com, not original work product. title.basics.tsv alone
+# is ~1GB, well over GitHub's 100MB per-file limit.
+Original data/imdb_data/title.basics.tsv
+Original data/imdb_data/title.basics.tsv.gz
+Original data/imdb_data/title.ratings.tsv
+Original data/imdb_data/title.ratings.tsv.gz
+Original data/imdb_data/IMDb_title_ratings.tsv
