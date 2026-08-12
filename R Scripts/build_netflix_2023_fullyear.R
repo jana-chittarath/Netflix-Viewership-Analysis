@@ -63,14 +63,69 @@ extract_alt_title <- function(title) {
   ifelse(has_alt, sub("^.* // ", "", title), NA_character_)
 }
 
+# Pulls the number out of a "Season N" / "Series N" / "Part N" label, e.g.
+# "Trailer Park Boys: Season 5" -> 5. Returns NA for "Limited Series,"
+# "Miniseries" (no number), or titles with no season label at all. Written
+# as a one-title-at-a-time function (applied via vapply below), since
+# regmatches() silently drops non-matching elements instead of returning
+# NA for them when given a vector directly — that would misalign the
+# result with the original rows.
+extract_season_number_one <- function(title) {
+  m <- regmatches(title, regexpr("(?:Season|Series|Part)\\s*([0-9]+)\\s*$", title, ignore.case = TRUE, perl = TRUE))
+  if (length(m) == 0) return(NA_integer_)
+  suppressWarnings(as.integer(gsub("[^0-9]", "", m)))
+}
+
+# Known bare-number sequels (a trailing number with NO colon and no
+# "Season"/"Series"/"Part" keyword, e.g. "Stranger Things 4") confirmed by
+# manual verification to be genuine TV season numbering for that specific
+# show, not a coincidentally-same-named movie franchise. A generic "strip
+# any trailing number" rule was tested and rejected (2026-08-10) — it
+# produced real false positives: "Hotel Transylvania 2," "Taken 2," and
+# "Spider-Man 2/3" are movies, not TV seasons, and would have wrongly
+# merged into an unrelated TV catalog entry that happens to share a
+# similar name. Add a show here only after confirming there's no
+# competing movie franchise using the same name + number.
+known_bare_number_shows <- c("Stranger Things")
+
+is_known_bare_number_title <- function(title) {
+  title %in% known_bare_number_shows ||
+    grepl(paste0("^(", paste(known_bare_number_shows, collapse = "|"), ") [0-9]+$"), title)
+}
+# The bare title (no number) is treated as that show's first installment.
+known_bare_number_base <- function(title) {
+  for (show in known_bare_number_shows) {
+    if (title == show || grepl(paste0("^", show, " [0-9]+$"), title)) return(show)
+  }
+  title
+}
+known_bare_number_season <- function(title) {
+  for (show in known_bare_number_shows) {
+    if (title == show) return(1L)
+    if (grepl(paste0("^", show, " [0-9]+$"), title)) {
+      return(suppressWarnings(as.integer(sub(paste0("^", show, " "), "", title))))
+    }
+  }
+  NA_integer_
+}
+
 # What writing script the alt-title uses. This is our stand-in for "is
 # this actually the same real-world show," since Netflix's report has no
 # ID system at all — two unrelated franchises sharing an English name
 # will usually have alt-titles in different scripts.
 detect_script_one <- function(alt) {
   if (is.na(alt) || alt == "") return("none")
-  if (grepl("\\p{Hangul}", alt, perl = TRUE)) return("Korean")
-  if (grepl("\\p{Hiragana}|\\p{Katakana}", alt, perl = TRUE)) return("Japanese")
+  # Hangul/Hiragana/Katakana use explicit Unicode block ranges, not PCRE's
+  # \p{Hangul} etc. script properties -- found 2026-08-10 that \p{Hangul}
+  # also matches punctuation shared across CJK scripts via Unicode's
+  # Script_Extensions data (e.g. U+30FB KATAKANA MIDDLE DOT, used
+  # constantly in Japanese titles like "space::skypiea"), which was
+  # wrongly tagging plain Japanese alt-titles as "Korean" and splitting a
+  # single show's own rows (e.g. One Piece, Naruto Shippuden) into two
+  # groups. Block ranges only match characters that actually belong to
+  # that script's dedicated Unicode block.
+  if (grepl("[가-힣ᄀ-ᇿ㄰-㆏ꥠ-꥿ힰ-퟿]", alt, perl = TRUE)) return("Korean")
+  if (grepl("[぀-ヿㇰ-ㇿ]", alt, perl = TRUE)) return("Japanese")
   if (grepl("\\p{Han}", alt, perl = TRUE)) return("Chinese_or_Kanji")
   if (grepl("\\p{Cyrillic}", alt, perl = TRUE)) return("Cyrillic")
   if (grepl("\\p{Arabic}", alt, perl = TRUE)) return("Arabic")
@@ -96,9 +151,38 @@ h2[, `Release Date` := as.character(`Release Date`)]  # match H1's date type
 netflix_2023 <- rbindlist(list(h1, h2), use.names = TRUE)
 
 netflix_2023[, title_no_alt      := strip_alt_title(Title)]
+netflix_2023[, is_known_override := vapply(title_no_alt, is_known_bare_number_title, logical(1))]
 netflix_2023[, base_title        := strip_season_label(title_no_alt)]
-netflix_2023[, had_season_label  := title_no_alt != base_title]
+netflix_2023[, had_season_label  := (title_no_alt != base_title) | is_known_override]
+netflix_2023[is_known_override == TRUE,
+             base_title := vapply(title_no_alt[is_known_override], known_bare_number_base, character(1))]
 netflix_2023[, alt_title_script  := vapply(extract_alt_title(Title), detect_script_one, character(1))]
+netflix_2023[, season_number     := vapply(title_no_alt, extract_season_number_one, integer(1))]
+netflix_2023[is_known_override == TRUE,
+             season_number := vapply(title_no_alt[is_known_override], known_bare_number_season, integer(1))]
+netflix_2023[, is_known_override := NULL]
+
+# --- Special case: "One Piece" mixes three different pieces of content --
+# Netflix's report labels the long-running anime by story arc (e.g. "ONE
+# PIECE: East Blue") — none of the ~80 arc-name rows say "Season N", so
+# none trigger season-label detection. The 2023 live-action adaptation is
+# the ONLY "One Piece" row labeled "Season 1", and several anime
+# movies/specials ("One Piece Film Z," "One Piece: Episode of Alabasta,"
+# etc.) are mixed in too. Left alone, the catalog match in a later script
+# would treat "ONE PIECE: Season 1" as the anime's season-labeled match
+# (since no arc row qualifies), wrongly attaching the live-action's 541.9M
+# hours to the 1999 anime's catalog entry — found and confirmed
+# 2026-08-10. Manually separated here into: the real anime (arc entries
+# only, summed), the live-action (its own group, named so it's text-
+# distinct from "One Piece" and can never be picked up by the catalog
+# match — it has no 2021 catalog entry of its own anyway, since it didn't
+# exist yet), and movies/specials (left as their own individual, un-
+# grouped titles — same treatment as any other same-franchise movie
+# throughout this project).
+netflix_2023[title_no_alt == "ONE PIECE: Season 1",
+             `:=`(base_title = "One Piece (Live Action)", had_season_label = TRUE)]
+netflix_2023[grepl("^ONE PIECE: ", title_no_alt) & title_no_alt != "ONE PIECE: Season 1",
+             `:=`(base_title = "One Piece", had_season_label = FALSE)]
 
 # Netflix's own report isn't consistently capitalized between the two
 # halves (e.g. "A Boyfriend For My Wife" in one half, "A boyfriend for my
@@ -123,7 +207,16 @@ netflix_2023_series <- netflix_2023[, .(
   Available_Globally_Ever    = any(`Available Globally?` == "Yes", na.rm = TRUE),
   Available_Globally_Always  = all(`Available Globally?` == "Yes"),
   Release_Date_Earliest      = min(`Release Date`, na.rm = TRUE),
-  n_rows_aggregated          = .N
+  n_rows_aggregated          = .N,
+  # The actual count of distinct seasons, as opposed to n_rows_aggregated
+  # (which also counts a season twice if it appeared in both half-year
+  # reports). A group with no numbered "Season N"/"Series N"/"Part N"
+  # label anywhere (a movie, special, or an unnumbered "Limited Series")
+  # counts as 1 — a single installment, not zero.
+  n_distinct_seasons         = {
+    nums <- unique(na.omit(season_number))
+    if (length(nums) == 0) 1L else length(nums)
+  }
 ), by = group_key]
 netflix_2023_series <- merge(netflix_2023_series, display_title, by = "group_key")
 netflix_2023_series[, group_key := NULL]

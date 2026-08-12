@@ -157,10 +157,18 @@ final_cols <- research_data[, .(
   available_globally_ever    = Available_Globally_Ever,
   available_globally_always  = Available_Globally_Always,
   release_date_earliest      = Release_Date_Earliest,
-  n_seasons_aggregated       = n_rows_aggregated,
+  n_distinct_seasons,
   tconst,
   imdb_title_type
 )]
+
+# Deliberately NOT adding a manual row for the 2023 live-action "One Piece"
+# (decided 2026-08-10). It has no row in the 2021 catalog (it didn't exist
+# yet), so unlike every other row here it would carry no 2021 rating,
+# Rotten Tomatoes, popularity, or platform data — inconsistent with the
+# rest of the dataset and with Step 4's requirement that every row have a
+# 2021 popularity value. Its hours still exist, correctly separated from
+# the real "One Piece" anime, in netflix_2023_fullyear.csv if ever needed.
 
 # Enforce true one-row-per-series uniqueness before saving.
 stopifnot(!any(duplicated(final_cols$title)))

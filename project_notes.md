@@ -1,6 +1,19 @@
 # Netflix Competitive Positioning Analysis — Project Notes
 
-_Living document — update as the analysis progresses. Last updated: 2026-08-09 (fixed a real matching bug found via duplicate-ID check; final TV-only analysis dataset now 1,250 rows)._
+_Living document — update as the analysis progresses. Last updated: 2026-08-10 (session paused mid-fix — see "Pending / not yet run" below before continuing)._
+
+## Pending / not yet run (2026-08-10) — read this first in a new session
+Two fixes are **written into the scripts but the pipeline has not been re-run** since the last regenerated output files (`netflix_analysis_ready.csv` etc. still reflect the state *before* these fixes):
+1. **Stranger Things fix** — `known_bare_number_shows <- c("Stranger Things")` whitelist in `merge_current_imdb.R`/`build_netflix_2023_fullyear.R` (both standalone and consolidated `netflix_data_merging_cleaning.R`). Combines "Stranger Things"/"Stranger Things 2/3/4" (no colon, so previously never grouped) into one real total (~616.6M hours vs. the ~140.1M currently in the data).
+2. **One Piece split** — separates the anime (1999, `tt0388629`) from an unrelated 2023 live-action adaptation (`tt11737520`) that was wrongly getting merged in via the "Season 1" label (anime arcs are never labeled "Season N", so the live-action was the only season-labeled candidate). Fix is written into `build_netflix_2023_fullyear.R` + `build_research_dataset.R` (and mirrored in the consolidated script): corrects the anime's `hours_viewed_2023` from 541.9M down to its real 682.2M (arc-only total), and appends a new manual row `"One Piece (Live Action)"` with only real-source-data columns filled (everything catalog-only left NA, since it was never in the 2021 catalog). Preview verified correct — not yet applied to the actual files.
+
+**Still open, awaiting a decision:**
+- **Heartbreak High** — confirmed second case of the exact same bug pattern as One Piece (catalog's 1994 original `tt0108800` vs. an unrelated 2022 Netflix reboot `tt15054962`; currently showing the reboot's 39.8M hours instead of the original's). Not yet fixed — same fix pattern as One Piece would apply.
+- **5 ambiguous titles flagged, not resolved:** The Staircase, TIGER & BUNNY, Bleach, Aurora, Chosen — each has a plausible case for being either a real title-collision bug or a legitimate same-show re-release/sequel; evidence from title+year alone wasn't conclusive for any of them. Recommended to leave as a documented "needs manual review" list rather than guess.
+
+**How these 11 candidates were found:** a general audit script (independently look up each final-dataset row's *matched Netflix-side title* against IMDb, not just the catalog's own tconst) — first pass (any movie/tvMovie shares the exact title anywhere in IMDb) was far too noisy (406/1250 flagged, mostly harmless coincidental title reuse). Refined to: flag only rows where the matched Netflix group's own season count is 1 (i.e., presents itself as a fresh premiere) AND its real release year is >3 years from the catalog's recorded premiere year — that dropped it to 11, all listed above. This refined check is a reusable diagnostic, not yet turned into a permanent pipeline script.
+
+**Once ready to proceed:** decide Heartbreak High + the 5 ambiguous titles, then re-run `R Scripts/netflix_data_merging_cleaning.R` (applies Stranger Things + One Piece + whatever else is decided in one pass), reverify row counts/spot-checks the way this session did throughout, update this file's stats, and re-push to the `data-merging-cleaning` branch (shared repo: `https://github.com/jana-chittarath/Netflix-Viewership-Analysis`, branch not yet updated since these fixes — teammates are actively adding analysis scripts on `main` and a new branch `kbhall0604-Q3-Linear-Regression` appeared, so re-check `git fetch` before pushing).
 
 ## Folder structure (as of 2026-08-09)
 The project folder was reorganized into subfolders. All scripts now `setwd()` to the project root (`~/Documents/MSBX 5415/Group Project`) unconditionally, then read raw inputs from `Original data/` — a script-location-relative `setwd()` broke once scripts and data lived in different folders, so every script was switched to always anchor to the fixed root path instead.
@@ -118,7 +131,7 @@ Analysis-ready file: **`netflix_analysis_ready.csv`** — **1,250 rows**, filter
 | Age rating | `age` | Missing values recoded to `"Unknown"` as its own category — kept, not dropped. |
 | Release timing | `year` | Use this as the main timing variable. `release_date_earliest` is left as-is (missing for ~328 rows, Netflix's report doesn't always give a date) — not filled or derived, per instruction. |
 | Prediction residuals / classification | *(not built yet)* | Comes out of the Q3/Q4 regression. |
-| ID / provenance, not analysis variables | `title`, `year`, `tconst`, `imdb_title_type`, `n_seasons_aggregated`, `release_date_earliest` | |
+| ID / provenance, not analysis variables | `title`, `year`, `tconst`, `imdb_title_type`, `n_seasons_aggregated`, `n_distinct_seasons`, `release_date_earliest` | `n_seasons_aggregated` counts raw report rows (season × half-year appearance — e.g. Trailer Park Boys = 24, its 12 seasons each in both halves); `n_distinct_seasons` (added 2026-08-10) is the actual season count (12). Kept `n_seasons_aggregated` unchanged rather than redefining it, since the shared team repo's existing EDA script already depends on that column's current meaning. |
 
 Known remaining missingness (left as NA, not imputed): `imdb_rating_catalog_2021` (15 rows), `views_2023` (~170 rows — not a named variable in any of the six research questions, so this only matters if you specifically analyze views; `hours_viewed_2023` itself is complete). No out-of-range IMDb ratings (0-10) or Rotten Tomatoes scores (0-100) found.
 
