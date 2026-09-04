@@ -19,7 +19,7 @@ The selected content-informed model uses IMDb awareness, rating quality, number 
 
 ## Presentation
 
-[View the project presentation slides](https://docs.google.com/presentation/d/1hIIv4olhzpDQLJGxhhq1gLNjRUj3zGWayAueF7sWYyM/edit?usp=sharing)
+[View the project presentation slides](https://github.com/jana-chittarath/Netflix-Viewership-Analysis/blob/main/Netflix%20Catalog%20Benchmark%20Analysis.pdf)
 
 ## Tools
 
